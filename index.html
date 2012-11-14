@@ -4,6 +4,8 @@
 <head>
 <meta http-equiv="Content-Type" content="text/ html; charset=UTF-8" />
 <script type="text/javascript" src="spryMap-2.js"></script>
+<script type="text/javascript" src="shortcut.js"></script>
+<script type="text/javascript" src="/socket.io/socket.io.js"></script>
 </head>
 <body>
 <div id="testBox" style="position:absolute; top: 0px; left: 0px; width: 100%;height:100%; margin: 0px 0px 0px; padding: 0px; display: hidden; z-index:-2;">
@@ -17,7 +19,7 @@ var map_height=34;
 var font_width = 18;
 var font_height = 30;
 var map_content = [];
-var connection;
+var socket;
 
 function intial() {
     var map_container = document.createElement('div');
@@ -35,9 +37,15 @@ function intial() {
     var map_view = document.getElementById('map_view');
     map_view.onclick = common_click;
     window.onresize = common_resize;
+    document.onkeypress = common_keypress;
     create_cursor("cursor", 238,238,238,0,0);
     setInterval(cursor_flick, 400);
     setInterval(check_map_div, 50);
+    shortcut.add("Backspace", function() {move_and_delete_cursor_value_and_socket('cursor');});
+    shortcut.add("Up", function() {move_cursor_ref_and_socket('cursor', 0, -1);});
+    shortcut.add("Down", function() {move_cursor_ref_and_socket('cursor', 0, 1);});
+    shortcut.add("Left", function() {move_cursor_ref_and_socket('cursor', -1, 0);});
+    shortcut.add("Right", function() {move_cursor_ref_and_socket('cursor', 1, 0);});
 }
 
 function htmlEntities(str) {
@@ -133,7 +141,7 @@ function common_click(e) {
     msg.data = {};
     msg.data.x = cursor_x;
     msg.data.y = cursor_y;
-    connection.send(JSON.stringify(msg));
+    socket.emit("move", JSON.stringify(msg));
 }
 
 function common_resize(e) {
@@ -178,7 +186,7 @@ function get_map_content(x, y) {
         msg.data = {};
         msg.data.x = x;
         msg.data.y = y;
-        connection.send(JSON.stringify(msg));
+        socket.emit("get_map", JSON.stringify(msg));
         map_content["mapx"+x+"mapy"+y] = "LOADING";
         return "LOADING";
     }
@@ -217,8 +225,9 @@ function get_map_value(s_x, s_y, x, y) {
     }
 }
 
-onkeypress = function(e) {
-    current_key = e.keyCode;
+
+function common_keypress(e) {
+    current_key = window.event ? e.keyCode : e.which;
     if(current_key>=32 && current_key<=126) {
         var value = String.fromCharCode(current_key);
         var msg = {};
@@ -227,9 +236,40 @@ onkeypress = function(e) {
         msg.data.value = value;
         msg.data.x = parseInt(parseInt(cursor.style.left)/font_width);
         msg.data.y = parseInt(parseInt(cursor.style.top)/font_height);
-        connection.send(JSON.stringify(msg));
+        socket.emit("type_in", JSON.stringify(msg));
         set_cursor_value("cursor",value);
     }
+}
+
+function move_and_delete_cursor_value_and_socket(id) {
+    move_cursor_ref(id, -1, 0);
+    var cursor = document.getElementById(id);
+    var cursor_x = parseInt(parseInt(cursor.style.left)/font_width);
+    var cursor_y = parseInt(parseInt(cursor.style.top)/font_height);
+    var s_x = parseInt(cursor_x/map_width);
+    var s_y = parseInt(cursor_y/map_height);
+    var x = cursor_x%map_width;
+    var y = cursor_y%map_height;
+    map_content["mapx"+s_x+"mapy"+s_y] = map_content["mapx"+s_x+"mapy"+s_y].substring(0,y*map_width+x)+" "+map_content["mapx"+s_x+"mapy"+s_y].substring(y*map_width+x+1,map_content["mapx"+s_x+"mapy"+s_y].length);
+    refresh_map_div(s_x, s_y);
+    var msg = {};
+    msg.type = "delete";
+    msg.data = {};
+    msg.data.x = cursor_x;
+    msg.data.y = cursor_y;
+    socket.emit("delete", JSON.stringify(msg));
+}
+
+function delete_cursor_value(id) {
+    var cursor = document.getElementById(id);
+    var cursor_x = parseInt(parseInt(cursor.style.left)/font_width);
+    var cursor_y = parseInt(parseInt(cursor.style.top)/font_height);
+    var s_x = parseInt(cursor_x/map_width);
+    var s_y = parseInt(cursor_y/map_height);
+    var x = cursor_x%map_width;
+    var y = cursor_y%map_height;
+    map_content["mapx"+s_x+"mapy"+s_y] = map_content["mapx"+s_x+"mapy"+s_y].substring(0,y*map_width+x)+" "+map_content["mapx"+s_x+"mapy"+s_y].substring(y*map_width+x+1,map_content["mapx"+s_x+"mapy"+s_y].length);
+    refresh_map_div(s_x, s_y);
 }
 
 function set_cursor_value(id, val) {
@@ -244,6 +284,23 @@ function set_cursor_value(id, val) {
     move_cursor_ref(id, 1, 0);
     refresh_map_div(s_x, s_y);
 }
+
+function move_cursor_ref_and_socket(id, dx, dy) {
+    var cursor = document.getElementById(id);
+    var cursor_x = parseInt(parseInt(cursor.style.left)/font_width)+dx;
+    var cursor_y = parseInt(parseInt(cursor.style.top)/font_height)+dy;
+    cursor.style.left=cursor_x*font_width+"px";
+    cursor.style.top=cursor_y*font_height+"px";
+
+    var msg = {};
+    msg.type = "move";
+    msg.data = {};
+    msg.data.x = cursor_x;
+    msg.data.y = cursor_y;
+    socket.emit("move", JSON.stringify(msg));
+}
+
+
 
 function move_cursor_ref(id, dx, dy) {
     var cursor = document.getElementById(id);
@@ -267,46 +324,47 @@ function move_cursor_abs(id, x, y) {
 
 window.onload = function() {
 
-    window.WebSocket = window.WebSocket || window.MozWebSocket;
-    if (!window.WebSocket) {
-        return;
-    }
+    socket = io.connect('http://localhost:1337');
 
-    connection = new WebSocket('ws://127.0.0.1:1337');
+    socket.on("ready", intial);
 
-    connection.onopen = function () {
-        console.log("connection success");
-        intial();
-    };
+    socket.on("join", function(data) {
+        var json = JSON.parse(data);
+        create_cursor(json.data.id, json.data.r, json.data.g, json.data.b, json.data.x, json.data.y);
+    });
 
-    connection.onerror = function (error) {
-        console.log("connection failed");
-    };
+    socket.on("exit", function(data) {
+        var json = JSON.parse(data);
+        delete_cursor(json.data.id);
+    });
 
-    connection.onmessage = function (message) {
-        try {
-            var json = JSON.parse(message.data);
-        } catch (e) {
-            console.log('This doesn\'t look like a valid JSON: ', message.data);
-            return;
-        }
+    socket.on("move", function(data) {
+        var json = JSON.parse(data);
+        move_cursor_abs(json.data.id, json.data.x, json.data.y);
+    });
 
-        if(json.type === "join") {
-            create_cursor(json.data.id, json.data.r, json.data.g, json.data.b, json.data.x, json.data.y);
-        } else if(json.type === "exit") {
-            delete_cursor(json.data.id);
-        } else if(json.type === "move") {
-            move_cursor_abs(json.data.id, json.data.x, json.data.y);
-        } else if(json.type === "type_in") {
-            move_cursor_abs(json.data.id, json.data.x, json.data.y);
-            var s_x = parseInt(json.data.x/map_width);
-            var s_y = parseInt(json.data.y/map_height);
-            if(typeof map_content["mapx"+s_x+"mapy"+s_y] != "undefined") set_cursor_value(json.data.id, json.data.value);
-        } else if(json.type === "get_map") {
-            map_content["mapx"+json.data.x+"mapy"+json.data.y] = json.data.content;
-            refresh_map_div(json.data.x, json.data.y);
-        }
-    }
+    socket.on("type_in", function(data) {
+        var json = JSON.parse(data);
+        move_cursor_abs(json.data.id, json.data.x, json.data.y);
+        var s_x = parseInt(json.data.x/map_width);
+        var s_y = parseInt(json.data.y/map_height);
+        if(typeof map_content["mapx"+s_x+"mapy"+s_y] != "undefined") set_cursor_value(json.data.id, json.data.value);
+    });
+
+    socket.on("delete", function(data) {
+        var json = JSON.parse(data);
+        move_cursor_abs(json.data.id, json.data.x, json.data.y);
+        var s_x = parseInt(json.data.x/map_width);
+        var s_y = parseInt(json.data.y/map_height);
+        if(typeof map_content["mapx"+s_x+"mapy"+s_y] != "undefined") delete_cursor_value(json.data.id);
+    });
+
+    socket.on("get_map", function(data) {
+        var json = JSON.parse(data);
+        map_content["mapx"+json.data.x+"mapy"+json.data.y] = json.data.content;
+        refresh_map_div(json.data.x, json.data.y);
+    });
+
 };
 
 </script>
