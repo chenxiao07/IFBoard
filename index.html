@@ -32,8 +32,8 @@ function intial() {
             startX: 0,
             startY: 0
             });
-    map_container.style.width="2000px";
-    map_container.style.height="2000px";
+    map_container.style.width="8000px";
+    map_container.style.height="8000px";
     var map_view = document.getElementById('map_view');
     map_view.onclick = common_click;
     window.onresize = common_resize;
@@ -165,19 +165,6 @@ Array.prototype.include = function(val) {
 String.prototype.times = function(n) {
     return Array.prototype.join.call({length:n+1}, this);
 };
-
-function get_xmlhttp() {
-    var xmlhttp;
-    if (window.XMLHttpRequest)
-    {// code for IE7+, Firefox, Chrome, Opera, Safari
-        xmlhttp=new XMLHttpRequest();
-    }
-    else
-    {// code for IE6, IE5
-        xmlhttp=new ActiveXObject("Microsoft.XMLHTTP");
-    }
-    return xmlhttp;
-}
 
 function get_map_content(x, y) {
     if(!map_content["mapx"+x+"mapy"+y]) {
@@ -324,7 +311,7 @@ function move_cursor_abs(id, x, y) {
 
 window.onload = function() {
 
-    socket = io.connect('http://localhost:1337');
+    socket = io.connect('http://49.212.183.201:8888');
 
     socket.on("ready", intial);
 

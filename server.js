@@ -38,11 +38,12 @@ var server = http.createServer(function(request, response) {
             response.end();
         });
     });
-}).listen(1337);
+}).listen(8888);
 
 
 
 io = io.listen(server);
+io.set('log level', 0);
 
 
 var users = [];
